@@ -4,7 +4,7 @@ import cv2
 
 try:
     from piper_sdk import *
-    PiperSDK = Piper
+    PiperSDK = C_PiperInterface
 except ImportError:
     print("警告：piper_sdk 未安装，将使用模拟模式")
     PiperSDK = None
@@ -23,32 +23,36 @@ class PiperRobot:
         self.camera_height = camera_height
         
         self.piper = None
-        self.interface = None
         
         if not use_sim and PiperSDK is not None:
             try:
-                self.piper = PiperSDK("can0")
-                self.interface = self.piper.init()
-                self.piper.connect()
-                time.sleep(0.1)
+                self.piper = PiperSDK(
+                    can_name="can0",
+                    judge_flag=True,
+                    can_auto_init=False,
+                    dh_is_offset=1,
+                    start_sdk_joint_limit=False,
+                    start_sdk_gripper_limit=False,
+                    logger_level=LogLevel.WARNING,
+                    log_to_file=False
+                )
                 
-                while not self.piper.enable_arm():
-                    time.sleep(0.01)
-                
-                self.interface.ModeCtrl(0x01, 0x01, 100, 0x00)
+                self.piper.CreateCanBus(can_name="can0")
+                self.piper.ConnectPort()
+                self.piper.MasterSlaveConfig(0xFC, 0, 0, 0)
+                time.sleep(0.5)
                 print("机械臂连接成功")
             except Exception as e:
                 print(f"警告：无法连接机械臂：{e}，将使用模拟模式")
                 self.use_sim = True
                 self.piper = None
-                self.interface = None
         
         self.camera = None
         if not use_sim and DepthCameraModule is not None:
             try:
                 self.camera = DepthCameraModule(
-                    color_width=camera_width,
-                    color_height=camera_height,
+                    color_width=640,
+                    color_height=480,
                     depth_width=640,
                     depth_height=480,
                     fps=30
@@ -84,24 +88,54 @@ class PiperRobot:
                 
     def get_joint_pos(self):
         if not self.use_sim and self.piper is not None:
-            joint_state = self.piper.get_joint_states()[0]
-            self.current_joint_pos = np.array(joint_state)
+            try:
+                joint_pose = self.piper.GetArmJointPoseMsgs()
+                self.current_joint_pos = np.array([
+                    joint_pose.joint_pos.J1,
+                    joint_pose.joint_pos.J2,
+                    joint_pose.joint_pos.J3,
+                    joint_pose.joint_pos.J4,
+                    joint_pose.joint_pos.J5,
+                    joint_pose.joint_pos.J6
+                ])
+            except Exception as e:
+                print(f"获取关节位置错误：{e}")
         return self.current_joint_pos.copy()
         
     def set_joint_pos(self, joint_pos, speed=None):
         joint_pos = np.array(joint_pos)
         if not self.use_sim and self.piper is not None:
-            spd = speed if speed is not None else self.move_spd_rate_ctrl
-            self.piper.move_j(tuple(joint_pos), spd)
+            try:
+                spd = speed if speed is not None else self.move_spd_rate_ctrl
+                self.piper.MoveJ(
+                    joint_pos[0],
+                    joint_pos[1],
+                    joint_pos[2],
+                    joint_pos[3],
+                    joint_pos[4],
+                    joint_pos[5],
+                    spd,
+                    1,
+                    0
+                )
+            except Exception as e:
+                print(f"设置关节位置错误：{e}")
         self.current_joint_pos = joint_pos.copy()
         if self.use_sim:
             self._update_end_effector_pos_sim()
             
     def get_end_effector_pos(self):
-        if self.use_sim:
-            return self.current_end_effector_pos.copy()
-        else:
-            return self.current_end_effector_pos.copy()
+        if not self.use_sim and self.piper is not None:
+            try:
+                end_pose = self.piper.GetArmEndPoseMsgs()
+                self.current_end_effector_pos = np.array([
+                    end_pose.end_pose.X_axis / 1000.0,
+                    end_pose.end_pose.Y_axis / 1000.0,
+                    end_pose.end_pose.Z_axis / 1000.0
+                ])
+            except Exception as e:
+                print(f"获取末端位置错误：{e}")
+        return self.current_end_effector_pos.copy()
             
     def get_obj_pos(self):
         return self.obj_pos.copy()
@@ -136,7 +170,7 @@ class PiperRobot:
         self.goal_pos = np.array([0.0, 0.75, 0.0])
         
         if not self.use_sim and self.piper is not None:
-            self.piper.move_j(tuple(np.zeros(6)), self.move_spd_rate_ctrl)
+            self.set_joint_pos(np.zeros(6))
             time.sleep(2.0)
             
         if self.use_sim:
@@ -156,8 +190,7 @@ class PiperRobot:
     def close(self):
         if self.piper is not None:
             try:
-                self.piper.disable_arm()
-                self.piper.disconnect()
+                self.piper.DisconnectPort()
             except:
                 pass
         if self.camera is not None:
