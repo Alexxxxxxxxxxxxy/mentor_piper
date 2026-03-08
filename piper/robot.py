@@ -107,40 +107,75 @@ class PiperRobot:
     def _init_apriltag(self, camera_calibration_file, hand_eye_calibration_file):
         """初始化 AprilTag 检测器"""
         try:
-            # 加载相机标定
-            if os.path.exists(camera_calibration_file):
-                data = np.load(camera_calibration_file)
+            # 获取脚本所在目录，支持相对路径
+            script_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+            
+            # 加载相机标定 - 尝试多个路径
+            cam_calib_paths = [
+                camera_calibration_file,
+                os.path.join(script_dir, camera_calibration_file),
+                'camera_calibration.npz',
+                os.path.join(script_dir, 'camera_calibration.npz')
+            ]
+            
+            cam_file_found = None
+            for path in cam_calib_paths:
+                if os.path.exists(path):
+                    cam_file_found = path
+                    break
+            
+            if cam_file_found:
+                data = np.load(cam_file_found)
                 self.camera_params = (
                     float(data['fx']),
                     float(data['fy']),
                     float(data['cx']),
                     float(data['cy'])
                 )
-                print(f"✓ 加载相机标定")
+                print(f"✓ 加载相机标定: {cam_file_found}")
             else:
-                print(f"⚠️  未找到相机标定文件: {camera_calibration_file}")
+                print(f"⚠️  未找到相机标定文件")
+                print(f"   尝试路径: {cam_calib_paths}")
                 print("   AprilTag 将无法估计 3D 位置")
             
             # 尝试加载手眼标定（优先简单标定）
             self.hand_eye_offset = None
             self.T_cam2robot = None
             
-            # 先尝试简单标定
-            simple_calib_file = 'simple_hand_eye.json'
-            if os.path.exists(simple_calib_file):
+            # 尝试手眼标定文件 - 多个路径
+            hand_eye_paths = [
+                'simple_hand_eye.json',
+                os.path.join(script_dir, 'simple_hand_eye.json'),
+                hand_eye_calibration_file,
+                os.path.join(script_dir, hand_eye_calibration_file)
+            ]
+            
+            hand_eye_file_found = None
+            hand_eye_type = None
+            
+            for path in hand_eye_paths:
+                if os.path.exists(path):
+                    hand_eye_file_found = path
+                    if 'simple' in path:
+                        hand_eye_type = 'simple'
+                    else:
+                        hand_eye_type = 'full'
+                    break
+            
+            if hand_eye_file_found and hand_eye_type == 'simple':
                 import json
-                with open(simple_calib_file, 'r') as f:
+                with open(hand_eye_file_found, 'r') as f:
                     calib_data = json.load(f)
                 self.hand_eye_offset = np.array(calib_data['offset'])
-                print(f"✓ 加载简单手眼标定，偏移量: {self.hand_eye_offset}")
-            elif os.path.exists(hand_eye_calibration_file):
-                # 再尝试完整手眼标定
-                data = np.load(hand_eye_calibration_file)
+                print(f"✓ 加载简单手眼标定: {hand_eye_file_found}")
+                print(f"  偏移量: {self.hand_eye_offset}")
+            elif hand_eye_file_found and hand_eye_type == 'full':
+                data = np.load(hand_eye_file_found)
                 self.T_cam2robot = data['T_cam2gripper']
-                print(f"✓ 加载完整手眼标定")
+                print(f"✓ 加载完整手眼标定: {hand_eye_file_found}")
             else:
                 print(f"⚠️  未找到手眼标定文件")
-                print(f"   请先运行 simple_hand_eye_calibration.py")
+                print(f"   请先运行 easy_hand_eye_calibration.py")
                 print("   将使用简单坐标转换（可能不准确）")
             
             # 初始化检测器

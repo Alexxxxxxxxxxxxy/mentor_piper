@@ -3,7 +3,6 @@ import numpy as np
 import cv2 
 from scipy.spatial.transform import Rotation as R
 import open3d as o3d
-import numpy as np
 import matplotlib.colors as mcolors
 
 
@@ -244,6 +243,15 @@ class DepthCameraModule:
         
         # 返回RGB图像、有组织的世界坐标系点云、深度数组和旋转矩阵
         return color_array_rgb, depth_array
+    
+    def stop(self):
+        """停止相机并释放资源"""
+        try:
+            if hasattr(self, 'pipeline') and self.pipeline is not None:
+                self.pipeline.stop()
+                print("✓ 相机已停止")
+        except Exception as e:
+            print(f"⚠️  停止相机时出错: {e}")
 
     def visualize_point_cloud_(self,points, colors, frame_to_visualize=None):
         """
@@ -621,9 +629,13 @@ class DepthCameraModule:
         num_table_samples_target = num_points // 4
         
         # --- 2. 定义掩码 (Masks) ---
+        
+        # 重新定义 zmin/zmax（用于桌子高度过滤）
+        zmin_table = -0.15
+        zmax_table = -0.1
 
         # 掩码 A: 桌子平面高度 (Z 轴)
-        table_height_mask = (points_ror_filtered[:, 2] >= zmin) & (points_ror_filtered[:, 2] <= -0.1)
+        table_height_mask = (points_ror_filtered[:, 2] >= zmin_table) & (points_ror_filtered[:, 2] <= zmax_table)
         
         # 掩码 B: 在桌子平面 *之上* 的点 (物体)
         objects_above_table_mask = (points_ror_filtered[:, 2] > -0.108)
@@ -874,9 +886,13 @@ class DepthCameraModule:
         
         # 2. 定义掩码 (Masks)
         # 输入: points_dbscan_filtered, rgb_dbscan_filtered
+        
+        # 重新定义 zmin/zmax（用于桌子高度过滤）
+        zmin_table = -0.15
+        zmax_table = -0.11
 
         # 掩码 A: 桌子平面高度 (Z 轴)
-        table_height_mask = (points_dbscan_filtered[:, 2] >= zmin) & (points_dbscan_filtered[:, 2] <= -0.11)
+        table_height_mask = (points_dbscan_filtered[:, 2] >= zmin_table) & (points_dbscan_filtered[:, 2] <= zmax_table)
         
         # 掩码 B: 在桌子平面 *之上* 的点 (物体)
         objects_above_table_mask = (points_dbscan_filtered[:, 2] > -0.108)
@@ -1313,12 +1329,23 @@ class DepthCameraModule:
 
 def main():
     camera = DepthCameraModule()
-    rgb, depth = camera.get_frame()
-    print(rgb.shape)
-    print(depth.shape)
-    print(rgb)
-    print(depth)
-    camera.visualize_point_cloud_(rgb, depth)
+    try:
+        rgb, depth = camera.get_frame()
+        if rgb is not None and depth is not None:
+            print(f"✓ 获取图像成功: RGB={rgb.shape}, Depth={depth.shape}")
+            
+            # 简单的测试：显示图像
+            import cv2
+            cv2.imshow('RGB Image', cv2.cvtColor(rgb, cv2.COLOR_RGB2BGR))
+            cv2.imshow('Depth Image', (depth * 1000).astype(np.uint8))  # 深度图×1000显示
+            print("按任意键退出...")
+            cv2.waitKey(0)
+            cv2.destroyAllWindows()
+        else:
+            print("✗ 获取图像失败")
+    finally:
+        camera.stop()
+        print("程序结束")
 
 if __name__ == "__main__":
     main()
