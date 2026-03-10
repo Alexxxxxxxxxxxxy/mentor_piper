@@ -48,14 +48,15 @@ class PiperRobot:
                 self.piper = PiperSDK("can0")
                 self.piper.ConnectPort()
                 
-                print("正在使能机械臂...")
                 while not self.piper.EnablePiper():
                     time.sleep(0.01)
                 
                 self.piper.GripperCtrl(0, 1000, 0x01, 0)
-                print("✓ 机械臂连接成功并已使能")
+                print("✓ 机械臂连接成功")
             except Exception as e:
                 print(f"警告：无法连接机械臂：{e}，将使用模拟模式")
+                import traceback
+                traceback.print_exc()
                 self.use_sim = True
                 self.piper = None
         
@@ -210,14 +211,14 @@ class PiperRobot:
     def get_joint_pos(self):
         if not self.use_sim and self.piper is not None:
             try:
-                joint_pose = self.piper.GetArmJointPoseMsgs()
+                joint_pose = self.piper.GetArmJointMsgs()
                 self.current_joint_pos = np.array([
-                    joint_pose.joint_pos.J1 / self.factor,
-                    joint_pose.joint_pos.J2 / self.factor,
-                    joint_pose.joint_pos.J3 / self.factor,
-                    joint_pose.joint_pos.J4 / self.factor,
-                    joint_pose.joint_pos.J5 / self.factor,
-                    joint_pose.joint_pos.J6 / self.factor
+                    joint_pose.joint_state.joint_1 / self.factor,
+                    joint_pose.joint_state.joint_2 / self.factor,
+                    joint_pose.joint_state.joint_3 / self.factor,
+                    joint_pose.joint_state.joint_4 / self.factor,
+                    joint_pose.joint_state.joint_5 / self.factor,
+                    joint_pose.joint_state.joint_6 / self.factor
                 ])
             except Exception as e:
                 print(f"获取关节位置错误：{e}")
@@ -319,8 +320,8 @@ class PiperRobot:
         """
         if self.hand_eye_offset is not None:
             # 使用简单手眼标定偏移量
-            # offset 单位是毫米，转换为米
-            offset_m = self.hand_eye_offset / 1000.0
+            # offset 已经是米为单位（从 easy_hand_eye_calibration.py 保存）
+            offset_m = self.hand_eye_offset
             
             # 先尝试简单的转换，根据 easy_hand_eye_calibration.py 的 offset 计算方式
             # robot_pos = tag_pos + offset
