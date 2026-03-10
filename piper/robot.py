@@ -249,8 +249,14 @@ class PiperRobot:
                 self.piper.MotionCtrl_2(0x01, 0x01, spd, 0x00)
                 self.piper.JointCtrl(joint_0, joint_1, joint_2, joint_3, joint_4, joint_5)
                 self.piper.GripperCtrl(gripper_cmd, 1000, 0x01, 0)
+                
+                # 获取机械臂状态用于调试
+                arm_status = self.piper.GetArmStatus()
+                print(f"[DEBUG] Arm Status: {arm_status}")
             except Exception as e:
                 print(f"设置关节位置错误：{e}")
+                import traceback
+                traceback.print_exc()
         
         self.current_joint_pos = joint_pos.copy()
         if self.use_sim:
@@ -320,8 +326,8 @@ class PiperRobot:
         """
         if self.hand_eye_offset is not None:
             # 使用简单手眼标定偏移量
-            # offset 已经是米为单位（从 easy_hand_eye_calibration.py 保存）
-            offset_m = self.hand_eye_offset
+            # offset 是毫米，需要转换为米
+            offset_m = self.hand_eye_offset / 1000.0
             
             # 先尝试简单的转换，根据 easy_hand_eye_calibration.py 的 offset 计算方式
             # robot_pos = tag_pos + offset
